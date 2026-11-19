@@ -3,9 +3,6 @@ name: Arca Auto Telegram
 on:
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   run:
     runs-on: ubuntu-latest
@@ -21,8 +18,3 @@ jobs:
           TARGET_URL: ${{ secrets.TARGET_URL }}
           ARCA_COOKIE: ${{ secrets.ARCA_COOKIE }}
         run: python main.py
-      - run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add saved_posts.txt
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Update history" && git push)
