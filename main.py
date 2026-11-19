@@ -17,24 +17,36 @@ HEADERS = {
 if ARCA_COOKIE:
     HEADERS["Cookie"] = ARCA_COOKIE
 
-HISTORY_FILE = "saved_posts.txt"
+TG_API = f"https://telegram.org{TELEGRAM_TOKEN}"
 
 
-def load_saved_ids():
-    if not os.path.exists(HISTORY_FILE):
-        return set()
-    with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-        return set(line.strip() for line in f if line.strip())
+def get_last_post_id():
+    res = requests.post(f"{TG_API}/getChat", data={"chat_id": TELEGRAM_CHAT_ID}).json()
+    pinned = res.get("result", {}).get("pinned_message", {})
+    text = pinned.get("text", "")
+    match = re.search(r"LAST_ID:(\d+)", text)
+    return int(match.group(1)) if match else 0
 
 
-def save_post_id(post_id):
-    with open(HISTORY_FILE, "a", encoding="utf-8") as f:
-        f.write(f"{post_id}\n")
+def set_last_post_id(post_id):
+    res = requests.post(
+        f"{TG_API}/sendMessage",
+        data={
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": f"🤖 기준점 기록 (LAST_ID:{post_id})",
+            "disable_notification": True,
+        },
+    ).json()
+    msg_id = res.get("result", {}).get("message_id")
+    if msg_id:
+        requests.post(
+            f"{TG_API}/pinChatMessage",
+            data={"chat_id": TELEGRAM_CHAT_ID, "message_id": msg_id, "disable_notification": True},
+        )
 
 
 def send_telegram_text(text):
-    url = f"https://telegram.org{TELEGRAM_TOKEN}/sendMessage"
-    requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": text})
+    requests.post(f"{TG_API}/sendMessage", data={"chat_id": TELEGRAM_CHAT_ID, "text": text})
 
 
 def send_telegram_media(file_bytes, filename):
@@ -46,9 +58,8 @@ def send_telegram_media(file_bytes, filename):
     else:
         method, field = "sendPhoto", "photo"
 
-    url = f"https://telegram.org{TELEGRAM_TOKEN}/{method}"
     files = {field: (filename, file_bytes)}
-    requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID}, files=files, timeout=30)
+    requests.post(f"{TG_API}/{method}", data={"chat_id": TELEGRAM_CHAT_ID}, files=files, timeout=30)
 
 
 def process_post(session, post_url, post_id, title):
@@ -85,35 +96,46 @@ def process_post(session, post_url, post_id, title):
 
 
 def main():
-    saved_ids = load_saved_ids()
-    is_first_run = len(saved_ids) == 0
+    last_id = get_last_post_id()
     session = requests.Session(impersonate="chrome")
 
     res = session.get(TARGET_URL, headers=HEADERS, timeout=15)
-    print(f"상태 코드: {res.status_code}")
+    print(f"상태 코드: {res.status_code}, 기존 기준 ID: {last_id}")
     if res.status_code != 200:
         return
 
     soup = BeautifulSoup(res.text, "html.parser")
     rows = soup.select("a.vrow.column:not(.notice)")
 
-    new_posts = []
+    posts = []
     for row in rows:
         href = row.get("href", "")
         match = re.search(r"/b/[^/]+/(\d+)", href)
         if not match:
             continue
-        post_id = match.group(1)
+        post_id = int(match.group(1))
         title_el = row.select_one("span.title")
         title = title_el.get_text(strip=True) if title_el else "제목없음"
         full_url = urljoin("https://arca.live", href.split("?")[0])
+        posts.append((post_id, full_url, title))
 
-        if is_first_run:
-            save_post_id(post_id)
-        elif post_id not in saved_ids:
-            new_posts.append((post_id, full_url, title))
+    if not posts:
+        return
 
-    if not is_first_run:
-        for post_id, full_url, title in reversed(new_posts):
+    max_id = max(p[0] for p in posts)
+
+    if last_id == 0:
+        set_last_post_id(max_id)
+        print(f"최초 기준점 등록 완료: {max_id}")
+        return
+
+    new_posts = [p for p in posts if p[0] > last_id]
+    if new_posts:
+        for post_id, full_url, title in sorted(new_posts, key=lambda x: x[0]):
             process_post(session, full_url, post_id, title)
-            save_post_id(post_id)
+            time.sleep(2)
+        set_last_post_id(max_id)
+
+
+if __name__ == "__main__":
+    main()
