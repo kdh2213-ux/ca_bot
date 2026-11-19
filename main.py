@@ -38,7 +38,7 @@ def send_telegram_text(text):
 
 
 def send_telegram_media(file_bytes, filename):
-    ext = os.path.splitext(filename).lower()
+    ext = os.path.splitext(filename)[1].lower()
     if ext in [".mp4", ".mov", ".webm"]:
         method, field = "sendVideo", "video"
     elif ext == ".gif":
@@ -65,7 +65,7 @@ def process_post(session, post_url, post_id, title):
     for tag in content.select("img, video, video source"):
         src = tag.get("data-originalurl") or tag.get("data-src") or tag.get("src")
         if src and "namu.la" in src:
-            clean_src = src.split("?")
+            clean_src = src.split("?")[0]
             if clean_src not in media_urls:
                 media_urls.append(clean_src)
 
@@ -79,7 +79,7 @@ def process_post(session, post_url, post_id, title):
             m_url = "https:" + m_url
         m_res = session.get(m_url, headers=HEADERS, timeout=20)
         if m_res.status_code == 200:
-            ext = os.path.splitext(m_url) or ".jpg"
+            ext = os.path.splitext(m_url)[1] or ".jpg"
             send_telegram_media(m_res.content, f"{post_id}_{idx:03d}{ext}")
         time.sleep(1)
 
@@ -90,6 +90,7 @@ def main():
     session = requests.Session(impersonate="chrome")
 
     res = session.get(TARGET_URL, headers=HEADERS, timeout=15)
+    print(f"상태 코드: {res.status_code}")
     if res.status_code != 200:
         return
 
@@ -105,7 +106,7 @@ def main():
         post_id = match.group(1)
         title_el = row.select_one("span.title")
         title = title_el.get_text(strip=True) if title_el else "제목없음"
-        full_url = urljoin("https://arca.live", href.split("?"))
+        full_url = urljoin("https://arca.live", href.split("?")[0])
 
         if is_first_run:
             save_post_id(post_id)
@@ -116,7 +117,3 @@ def main():
         for post_id, full_url, title in reversed(new_posts):
             process_post(session, full_url, post_id, title)
             save_post_id(post_id)
-            time.sleep(2)
-
-
-if __name__ == "__main__":
