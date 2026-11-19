@@ -5,10 +5,10 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from curl_cffi import requests
 
-TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
-TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
-TARGET_URL = os.environ["TARGET_URL"]
-ARCA_COOKIE = os.environ.get("ARCA_COOKIE", "")
+TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"].strip().replace(" ", "")
+TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"].strip()
+TARGET_URL = os.environ["TARGET_URL"].strip()
+ARCA_COOKIE = os.environ.get("ARCA_COOKIE", "").strip()
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -99,6 +99,7 @@ def process_post(session, post_url, post_id, title):
 
 
 def main():
+    print(f"타겟 URL 확인: [{TARGET_URL}]")
     last_id = get_last_post_id()
     session = requests.Session(impersonate="chrome")
 
@@ -124,6 +125,7 @@ def main():
         posts.append({"id": post_id, "url": full_url, "title": title})
 
     if not posts:
+        print("게시글이 0개입니다.")
         return
 
     max_id = max(item["id"] for item in posts)
