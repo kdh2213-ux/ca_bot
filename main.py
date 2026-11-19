@@ -50,7 +50,8 @@ def send_telegram_text(text):
 
 
 def send_telegram_media(file_bytes, filename):
-    ext = os.path.splitext(filename)[1].lower()
+    _, ext = os.path.splitext(filename)
+    ext = ext.lower()
     if ext in [".mp4", ".mov", ".webm"]:
         method, field = "sendVideo", "video"
     elif ext == ".gif":
@@ -76,7 +77,7 @@ def process_post(session, post_url, post_id, title):
     for tag in content.select("img, video, video source"):
         src = tag.get("data-originalurl") or tag.get("data-src") or tag.get("src")
         if src and "namu.la" in src:
-            clean_src = src.split("?")[0]
+            clean_src, _, _ = src.partition("?")
             if clean_src not in media_urls:
                 media_urls.append(clean_src)
 
@@ -90,7 +91,9 @@ def process_post(session, post_url, post_id, title):
             m_url = "https:" + m_url
         m_res = session.get(m_url, headers=HEADERS, timeout=20)
         if m_res.status_code == 200:
-            ext = os.path.splitext(m_url)[1] or ".jpg"
+            _, ext = os.path.splitext(m_url)
+            if not ext:
+                ext = ".jpg"
             send_telegram_media(m_res.content, f"{post_id}_{idx:03d}{ext}")
         time.sleep(1)
 
@@ -116,23 +119,24 @@ def main():
         post_id = int(match.group(1))
         title_el = row.select_one("span.title")
         title = title_el.get_text(strip=True) if title_el else "제목없음"
-        full_url = urljoin("https://arca.live", href.split("?")[0])
-        posts.append((post_id, full_url, title))
+        clean_href, _, _ = href.partition("?")
+        full_url = urljoin("https://arca.live", clean_href)
+        posts.append({"id": post_id, "url": full_url, "title": title})
 
     if not posts:
         return
 
-    max_id = max(p[0] for p in posts)
+    max_id = max(item["id"] for item in posts)
 
     if last_id == 0:
         set_last_post_id(max_id)
         print(f"최초 기준점 등록 완료: {max_id}")
         return
 
-    new_posts = [p for p in posts if p[0] > last_id]
+    new_posts = [item for item in posts if item["id"] > last_id]
     if new_posts:
-        for post_id, full_url, title in sorted(new_posts, key=lambda x: x[0]):
-            process_post(session, full_url, post_id, title)
+        for item in sorted(new_posts, key=lambda x: x["id"]):
+            process_post(session, item["url"], item["id"], item["title"])
             time.sleep(2)
         set_last_post_id(max_id)
 
